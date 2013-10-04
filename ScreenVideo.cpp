@@ -38,7 +38,7 @@ using namespace android;
 static uint32_t DEFAULT_DISPLAY_ID = ISurfaceComposer::eDisplayIdMain;
 
 static void usage(const char* pname)
-{
+    {
     fprintf(stderr,
             "usage: %s [-hp] [-d display-id] [FILENAME]\n"
             "   -h: this message\n"
@@ -47,12 +47,13 @@ static void usage(const char* pname)
             "If FILENAME ends with .png it will be saved as a png.\n"
             "If FILENAME is not given, the results will be printed to stdout.\n",
             pname, DEFAULT_DISPLAY_ID
-    );
-}
+           );
+    }
 
 static SkBitmap::Config flinger2skia(PixelFormat f)
-{
-    switch (f) {
+    {
+    switch (f)
+        {
         case PIXEL_FORMAT_A_8:
             return SkBitmap::kA8_Config;
         case PIXEL_FORMAT_RGB_565:
@@ -61,14 +62,15 @@ static SkBitmap::Config flinger2skia(PixelFormat f)
             return SkBitmap::kARGB_4444_Config;
         default:
             return SkBitmap::kARGB_8888_Config;
+        }
     }
-}
 
 static status_t vinfoToPixelFormat(const fb_var_screeninfo& vinfo,
-        uint32_t* bytespp, uint32_t* f)
-{
+                                   uint32_t* bytespp, uint32_t* f)
+    {
 
-    switch (vinfo.bits_per_pixel) {
+    switch (vinfo.bits_per_pixel)
+        {
         case 16:
             *f = PIXEL_FORMAT_RGB_565;
             *bytespp = 2;
@@ -84,92 +86,105 @@ static status_t vinfoToPixelFormat(const fb_var_screeninfo& vinfo,
             break;
         default:
             return BAD_VALUE;
-    }
+        }
     return NO_ERROR;
-}
+    }
 
 int main(int argc, char** argv)
-{
+    {
     bool png = true;
     int32_t displayId = DEFAULT_DISPLAY_ID;
-	int fileno = 0;
+    int fileno = 0;
 
     ScreenshotClient screenshot;
     sp<IBinder> display = SurfaceComposerClient::getBuiltInDisplay(displayId);
 
-	while (1)
-		{
-		void const* mapbase = MAP_FAILED;
-		ssize_t mapsize = -1;
+    while (1)
+        {
+        void const* mapbase = MAP_FAILED;
+        ssize_t mapsize = -1;
 
-		void const* base = 0;
-		uint32_t w, h, f;
-		size_t size = 0;
-		int fd = -1;
-		char filename[50];
-		
-	    sprintf(filename, "/mnt/sdcard/screen-%d.png", fileno++);	
+        void const* base = 0;
+        uint32_t w, h, f;
+        size_t size = 0;
+        int fd = -1;
+        char filename[50];
 
-		fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0664);
-        if (fd == -1) {
+        sprintf(filename, "/mnt/sdcard/screen-%d.png", fileno++);
+
+        fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0664);
+        if (fd == -1)
+            {
             fprintf(stderr, "Error opening file: %s (%s)\n", filename, strerror(errno));
             return 1;
+            }
+
+        if (display != NULL && screenshot.update(display) == NO_ERROR)
+            {
+            base = screenshot.getPixels();
+            w = screenshot.getWidth();
+            h = screenshot.getHeight();
+            f = screenshot.getFormat();
+            size = screenshot.getSize();
+            }
+        else
+            {
+            const char* fbpath = "/dev/graphics/fb0";
+            int fb = open(fbpath, O_RDONLY);
+            if (fb >= 0)
+                {
+                struct fb_var_screeninfo vinfo;
+                if (ioctl(fb, FBIOGET_VSCREENINFO, &vinfo) == 0)
+                    {
+                    uint32_t bytespp;
+                    if (vinfoToPixelFormat(vinfo, &bytespp, &f) == NO_ERROR)
+                        {
+                        size_t offset = (vinfo.xoffset + vinfo.yoffset*vinfo.xres) * bytespp;
+                        w = vinfo.xres;
+                        h = vinfo.yres;
+                        size = w*h*bytespp;
+                        mapsize = offset + size;
+                        mapbase = mmap(0, mapsize, PROT_READ, MAP_PRIVATE, fb, 0);
+                        if (mapbase != MAP_FAILED)
+                            {
+                            base = (void const *)((char const *)mapbase + offset);
+                            }
+                        }
+                    }
+
+                close(fb);
+                }
+            }
+
+        if (base)
+            {
+            if (png)
+                {
+                SkBitmap b;
+                b.setConfig(flinger2skia(f), w, h);
+                b.setPixels((void*)base);
+                SkDynamicMemoryWStream stream;
+                SkImageEncoder::EncodeStream(&stream, b,
+                                             SkImageEncoder::kPNG_Type, SkImageEncoder::kDefaultQuality);
+                SkData* streamData = stream.copyToData();
+                write(fd, streamData->data(), streamData->size());
+                streamData->unref();
+                }
+            else
+                {
+                write(fd, &w, 4);
+                write(fd, &h, 4);
+                write(fd, &f, 4);
+                write(fd, &size, 4);
+                write(fd, base, size);
+                }
+            }
+        close(fd);
+        if (mapbase != MAP_FAILED)
+            {
+            munmap((void *)mapbase, mapsize);
+            }
+        usleep (100000);
         }
-
-		if (display != NULL && screenshot.update(display) == NO_ERROR) {
-		    base = screenshot.getPixels();
-		    w = screenshot.getWidth();
-		    h = screenshot.getHeight();
-		    f = screenshot.getFormat();
-		    size = screenshot.getSize();
-		} else {
-		    const char* fbpath = "/dev/graphics/fb0";
-		    int fb = open(fbpath, O_RDONLY);
-		    if (fb >= 0) {
-		        struct fb_var_screeninfo vinfo;
-		        if (ioctl(fb, FBIOGET_VSCREENINFO, &vinfo) == 0) {
-		            uint32_t bytespp;
-		            if (vinfoToPixelFormat(vinfo, &bytespp, &f) == NO_ERROR) {
-		                size_t offset = (vinfo.xoffset + vinfo.yoffset*vinfo.xres) * bytespp;
-		                w = vinfo.xres;
-		                h = vinfo.yres;
-		                size = w*h*bytespp;
-		                mapsize = offset + size;
-		                mapbase = mmap(0, mapsize, PROT_READ, MAP_PRIVATE, fb, 0);
-		                if (mapbase != MAP_FAILED) {
-		                    base = (void const *)((char const *)mapbase + offset);
-		                }
-		            }
-		        }
-				
-		        close(fb);
-		    }
-		}
-
-		if (base) {
-		    if (png) {
-		        SkBitmap b;
-		        b.setConfig(flinger2skia(f), w, h);
-		        b.setPixels((void*)base);
-		        SkDynamicMemoryWStream stream;
-		        SkImageEncoder::EncodeStream(&stream, b,
-		                SkImageEncoder::kPNG_Type, SkImageEncoder::kDefaultQuality);
-		        SkData* streamData = stream.copyToData();
-		        write(fd, streamData->data(), streamData->size());
-		        streamData->unref();
-		    } else {
-		        write(fd, &w, 4);
-		        write(fd, &h, 4);
-		        write(fd, &f, 4);
-				write(fd, &size, 4);			    
-		        write(fd, base, size);
-		    }
-		}
-		close(fd);
-		if (mapbase != MAP_FAILED) {
-		    munmap((void *)mapbase, mapsize);
-		}
-	usleep (100000);
-	}
     return 0;
-}
+    }
