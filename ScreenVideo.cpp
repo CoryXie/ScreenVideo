@@ -110,7 +110,7 @@ int main(int argc, char** argv)
         int fd = -1;
         char filename[50];
 
-        sprintf(filename, "/mnt/sdcard/screen-%d.png", fileno++);
+        sprintf(filename, "/data/screenvideo/screen-%d.png", fileno++);
 
         fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0664);
         if (fd == -1)
